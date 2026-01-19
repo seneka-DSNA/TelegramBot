@@ -12,7 +12,7 @@ from telegram.ext import (
 # ========================
 # CONFIG
 # ========================
-BOT_TOKEN = "8352172838:AAEmthGzZxFTznlW84b5dx-it1yvHJCuRZY"
+BOT_TOKEN = 
 
 
 # ========================
