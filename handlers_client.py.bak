@@ -1,0 +1,105 @@
+# handlers_client.py
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from config import ROLE_CLIENT
+from auth import start_auth, is_awaiting_code, authenticate_code, cancel_auth, logout
+from catalog import CATALOG_ITEMS
+from middleware import require_session
+from client_conversation_service import ClientConversationService
+SESSION_TTL_MINUTES = 30  # X tiempo
+@require_session
+def handle_catalog(callback_query, context):
+    keyboard = []
+
+    for item in CATALOG_ITEMS:
+        button_text = f"{item['name']} — {item['price']} €"
+        keyboard.append([
+            InlineKeyboardButton(
+                text=button_text,
+                callback_data=f"catalog_item:{item['id']}"
+            )
+        ])
+
+    keyboard.append([
+        InlineKeyboardButton(
+            text="⬅️ Volver al menú",
+            callback_data="main_menu"
+        )
+    ])
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    callback_query.edit_message_text(
+        text="📦 *Catálogo disponible*",
+        reply_markup=reply_markup,
+        parse_mode="Markdown"
+    )
+
+def auth_menu():
+    keyboard = [[InlineKeyboardButton("🔐 Autenticar", callback_data="AUTH_START")]]
+    return InlineKeyboardMarkup(keyboard)
+
+def main_menu():
+    keyboard = [
+        [
+            InlineKeyboardButton("📦 Catálogo", callback_data="CATALOGO"),
+            InlineKeyboardButton("📝 Pedido", callback_data="PEDIDO"),
+        ],
+        [InlineKeyboardButton("🎁 MysteryBox", callback_data="MYSTERYBOX")],
+        [InlineKeyboardButton("🚪 Cerrar sesión", callback_data="LOGOUT")],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+async def start_command(update, context):
+    # /start siempre muestra el punto de entrada
+    chat = update.effective_chat
+    if required_session(chat):
+        await update.message.reply_text("Sesión activa. Elige una opción:", reply_markup=main_menu())
+    else:
+        await update.message.reply_text(
+            "🔒 Acceso restringido.\nPulsa para autenticarte:",
+            reply_markup=auth_menu(),
+        )
+
+
+    # Menú principal
+    if action == "CATALOGO":
+        return handle_catalog(update, context)
+    elif action == "PEDIDO":
+        await query.edit_message_text("📝 *Pedido*\n\nAquí empieza el flujo del pedido.", parse_mode="Markdown")
+    elif action == "MYSTERYBOX":
+        await query.edit_message_text("🎁 *MysteryBox*\n\n(Implementación pendiente)", parse_mode="Markdown")
+
+@require_session
+async def client_reply_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    session = context.session
+
+    if not session.can_reply or not session.active_order_id:
+        await query.edit_message_text("❌ No hay mensajes a los que responder.")
+        return
+
+    context.user_data["state"] = "CLIENT_REPLYING"
+
+    await query.edit_message_text(
+        "✏️ Escribe tu mensaje para el repartidor."
+    )
+
+@require_session
+async def client_reply_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("state") != "CLIENT_REPLYING":
+        return
+
+    session = context.session
+    order_id = session.active_order_id
+    text = update.message.text
+
+    service = ClientConversationService(context.bot)
+
+    await service.send_message_to_group(order_id, text)
+
+    session.disable_reply()
+    context.user_data.clear()
+
+    await update.message.reply_text("📨 Mensaje enviado al repartidor.")

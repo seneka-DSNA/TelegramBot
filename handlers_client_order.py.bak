@@ -1,0 +1,276 @@
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+)
+from telegram.ext import ContextTypes
+
+from middleware import require_session
+from order import Order
+from order_state import OrderState
+from product_repository import list_active_products
+from order_repository import insert_order
+
+
+# -------------------------------------------------
+# UI helpers
+# -------------------------------------------------
+
+def build_products_keyboard(products, order: Order):
+    keyboard = []
+
+    for p in products:
+        qty = order.products.get(p["id"], 0)
+        counter = f"x{qty}" 
+        producto_nombre = f"{p['name']}" 
+        contador = counter
+        keyboard.append([
+            InlineKeyboardButton("➖", callback_data=f"ORDER_DEC_{p['id']}"),
+            InlineKeyboardButton(producto_nombre, callback_data="IGNORE"),
+            InlineKeyboardButton(contador, callback_data="IGNORE"),
+            InlineKeyboardButton("➕", callback_data=f"ORDER_INC_{p['id']}"),
+        ])
+
+    keyboard.append([
+        InlineKeyboardButton("✅ Continuar", callback_data="ORDER_NEXT")
+    ])
+
+    return InlineKeyboardMarkup(keyboard)
+
+
+# -------------------------------------------------
+# START ORDER
+# -------------------------------------------------
+
+@require_session
+async def client_order_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    products = list_active_products()
+
+    if not products:
+        await update.callback_query.edit_message_text(
+            "❌ No hay productos disponibles."
+        )
+        return
+
+    order = Order()
+    context.user_data.clear()
+    context.user_data["order"] = order
+    context.user_data["state"] = OrderState.SELECT_PRODUCT
+
+    keyboard = build_products_keyboard(products, order)
+
+    await update.callback_query.edit_message_text(
+        "🛒 Selecciona productos:",
+        reply_markup=keyboard
+    )
+
+
+# -------------------------------------------------
+# PRODUCT SELECTION CALLBACKS
+# -------------------------------------------------
+
+@require_session
+async def client_order_product_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    data = query.data
+
+    await query.answer()
+
+    state = context.user_data.get("state")
+    order: Order = context.user_data.get("order")
+
+    # 🔒 Este handler SOLO funciona en SELECT_PRODUCT
+    if state != OrderState.SELECT_PRODUCT or not order:
+        await query.answer("Acción inválida", show_alert=True)
+        return
+
+    products = list_active_products()
+
+    if data.startswith("ORDER_INC_"):
+        product_id = int(data.replace("ORDER_INC_", ""))
+        order.add_product(product_id)
+
+    elif data.startswith("ORDER_DEC_"):
+        product_id = int(data.replace("ORDER_DEC_", ""))
+        order.remove_product(product_id)
+
+    elif data == "ORDER_NEXT":
+        if not order.has_products():
+            await query.answer("Selecciona al menos un producto", show_alert=True)
+            return
+
+        context.user_data["state"] = OrderState.ADDRESS
+        await query.edit_message_text("📍 Introduce la dirección de entrega:")
+        return
+
+    # 🔁 Refrescar teclado
+    keyboard = build_products_keyboard(products, order)
+    await query.edit_message_reply_markup(reply_markup=keyboard)
+
+
+# -------------------------------------------------
+# TEXT FLOW HANDLER
+# -------------------------------------------------
+
+async def client_order_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+
+    state: OrderState = context.user_data.get("state")
+    order: Order = context.user_data.get("order")
+
+    # Debug útil (puedes quitarlo luego)
+    print("STATE:", state)
+    print("ORDER:", order)
+
+    if not state or not order:
+        return
+
+    # ADDRESS
+    if state == OrderState.ADDRESS:
+        order.set_address(text)
+        context.user_data["state"] = OrderState.MESSAGE
+
+        await update.message.reply_text(
+            "✍️ Mensaje para el repartidor (opcional, escribe '-' si no quieres):"
+        )
+        return
+
+    # MESSAGE
+    if state == OrderState.MESSAGE:
+        order.set_message("" if text == "-" else text)
+        context.user_data["state"] = OrderState.CONFIRM
+
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("🚀 Lo antes posible", callback_data="TIME_ASAP")],
+            [
+                InlineKeyboardButton("⏱ 1h", callback_data="TIME_1H"),
+                InlineKeyboardButton("⏱ 2h", callback_data="TIME_2H"),
+            ],
+            [
+                InlineKeyboardButton("⏱ 3h", callback_data="TIME_3H"),
+                InlineKeyboardButton("⏱ 4h", callback_data="TIME_4H"),
+            ],
+        ])
+        await update.message.reply_text(
+            "⏰ ¿En cuánto tiempo debe llegar el pedido?"
+        )
+        return
+
+    # CONFIRM (aquí pedimos el tiempo y mostramos resumen)
+    if state == OrderState.CONFIRM:
+        order.set_delivery_time(text)
+
+        summary = (
+            "🧾 *Resumen del pedido*\n\n"
+            f"📍 Dirección: {order.address}\n"
+            f"✍️ Mensaje: {order.message or '—'}\n"
+            f"⏰ Tiempo: {order.delivery_time}\n\n"
+            "¿Confirmas el pedido?"
+        )
+
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ Confirmar", callback_data="ORDER_CONFIRM"),
+                InlineKeyboardButton("❌ Cancelar", callback_data="ORDER_CANCEL"),
+            ]
+        ])
+
+        await update.message.reply_text(
+            summary,
+            parse_mode="Markdown",
+            reply_markup=keyboard
+        )
+        return
+
+
+# -------------------------------------------------
+# CONFIRM / CANCEL CALLBACK
+# -------------------------------------------------
+
+@require_session
+async def client_order_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    data = query.data
+
+    await query.answer()
+
+    state = context.user_data.get("state")
+    order: Order = context.user_data.get("order")
+
+    if state != OrderState.CONFIRM or not order:
+        await query.answer("Pedido no válido.", show_alert=True)
+        return
+
+    if data == "ORDER_CANCEL":
+        context.user_data.clear()
+        await query.edit_message_text("❌ Pedido cancelado.")
+        return
+
+    if data == "ORDER_CONFIRM":
+        if not order.is_complete():
+            await query.answer("Pedido incompleto.", show_alert=True)
+            return
+
+        await query.edit_message_text(
+            "✅ Pedido confirmado. En breve será preparado."
+        )
+
+        insert_order(
+            client_id=context.session.client_id,
+            address=order.address,
+            message=order.message,
+            delivery_time=order.delivery_time,
+            products=order.products,
+        )
+
+        context.user_data.clear()
+@require_session
+async def client_order_time_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    data = query.data
+
+    await query.answer()
+
+    state = context.user_data.get("state")
+    order: Order = context.user_data.get("order")
+
+    if state != OrderState.TIME or not order:
+        await query.answer("Acción inválida", show_alert=True)
+        return
+
+    TIME_MAP = {
+        "TIME_ASAP": "Lo antes posible",
+        "TIME_1H": "1 hora",
+        "TIME_2H": "2 horas",
+        "TIME_3H": "3 horas",
+        "TIME_4H": "4 horas",
+    }
+
+    if data not in TIME_MAP:
+        return
+
+    order.set_delivery_time(TIME_MAP[data])
+    context.user_data["state"] = OrderState.CONFIRM
+
+    summary = (
+        "🧾 *Resumen del pedido*\n\n"
+        f"📍 Dirección: {order.address}\n"
+        f"✍️ Mensaje: {order.message or '—'}\n"
+        f"⏰ Tiempo: {order.delivery_time}\n\n"
+        "¿Confirmas el pedido?"
+    )
+
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Confirmar", callback_data="ORDER_CONFIRM"),
+            InlineKeyboardButton("❌ Cancelar", callback_data="ORDER_CANCEL"),
+        ]
+    ])
+
+    await query.edit_message_text(
+        summary,
+        parse_mode="Markdown",
+        reply_markup=keyboard
+    )
+
