@@ -39,13 +39,20 @@ async def auth_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if session_manager.get(chat_id):
         return
+    state = context.user_data.get("state")
+    
+    if state not in (AUTH_PASSWORD, AUTH_WAITING_CODE):
+        return
 
     text = update.message.text.strip()
-    state = context.user_data.get("state", AUTH_PASSWORD)
 
     auth_service = context.application.bot_data["auth_service"]
     client_id = context.user_data.get("client_id")
-
+    
+    if not client_id:
+        context.user_data.clear()
+        await update.message.reply_text("❗ Error de sesión. Escribe 'menu' para reiniciar.")
+        return
     # --------------------------------------------------
     # Paso 1: password
     # --------------------------------------------------

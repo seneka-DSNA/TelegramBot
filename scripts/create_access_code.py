@@ -2,7 +2,7 @@ import re
 
 from access_code_repository import AccessCodeRepository
 
-ACCESS_CODE_REGEX = re.compile(r"^[A-Z0-9]{6}$")
+ACCESS_CODE_REGEX = re.compile(r"^[A-Z0-9]{10}$")
 
 
 def main():
@@ -11,11 +11,11 @@ def main():
     print("=== Crear Access Code ===")
 
     while True:
-        code = input("Introduce access_code (6 caracteres A-Z0-9): ").strip().upper()
+        code = input("Introduce access_code (10 caracteres A-Z0-9): ").strip().upper()
 
         # Validación de formato
         if not ACCESS_CODE_REGEX.match(code):
-            print("❌ Código inválido. Debe tener exactamente 6 caracteres A-Z0-9.")
+            print("❌ Código inválido. Debe tener exactamente 10 caracteres A-Z0-9.")
             continue
 
         # Validación de duplicado

@@ -5,11 +5,11 @@ def list_active_products():
             "name": "lel",
             "price": 50.00
         },
-#        {
-#            "id": 2,
-#            "name": "lol",
-#            "price": 20.00
-#        },
+        {
+            "id": 2,
+            "name": "lol",
+            "price": 20.00
+        },
     ]
 
 

@@ -1,0 +1,14 @@
+[
+    {
+        "producto": "lel",
+        "precio_unidad": 50.0,
+        "cantidad": 14,
+        "precio_total": 700.0
+    },
+    {
+        "producto": "lol",
+        "precio_unidad": 20.0,
+        "cantidad": 12,
+        "precio_total": 240.0
+    }
+]

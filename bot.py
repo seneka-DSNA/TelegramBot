@@ -12,8 +12,7 @@ from telegram.ext import (
 # ========================
 # CONFIG
 # ========================
-BOT_TOKEN = "8352172838:AAEmthGzZxFTznlW84b5dx-it1yvHJCuRZY"
-
+from config import BOT_TOKEN
 
 # ========================
 # SERVICES / CORE
@@ -132,6 +131,8 @@ def main():
         ),
         group=0,
     )
+ 
+
     app.add_handler(
         MessageHandler(
             filters.ChatType.PRIVATE & filters.TEXT,
@@ -139,7 +140,6 @@ def main():
         ),
         group=0,
     )
-
     # ============================================================
     # GROUP 3 — CLIENT ORDER FLOW
     # ============================================================
