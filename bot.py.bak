@@ -8,7 +8,7 @@ ApplicationBuilder,
     CallbackQueryHandler,
     filters
 )
-BOT_TOKEN = "8352172838:AAEmthGzZxFTznlW84b5dx-it1yvHJCuRZY"
+
 from handlers_auth import start_handler, auth_handler
 from handlers_menu import menu_handler
 from auth_service import AuthService
