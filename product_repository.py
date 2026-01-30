@@ -32,7 +32,7 @@ def list_active_products():
         },
         {
             "id": 7,
-            "name": "Llavero D.R.Y",
+            "name": "Llavero 2",
             "price": 5.00
         },
         {
