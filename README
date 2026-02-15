@@ -2,4 +2,3 @@
 2. Montar systemd con el telegram-bot.service
 3. editar el .env para que las variables sean de entorno.   
 
-blabla
